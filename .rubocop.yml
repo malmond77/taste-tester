@@ -149,6 +149,12 @@ TrailingCommaInArrayLiteral:
 TrailingCommaInHashLiteral:
   EnforcedStyleForMultiline: comma
 
+TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: comma
+
+TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: comma
+
 TrailingCommaInArguments:
   EnforcedStyleForMultiline: comma
 
