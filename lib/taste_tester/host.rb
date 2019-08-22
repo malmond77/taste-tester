@@ -242,14 +242,28 @@ module TasteTester
         ohai.plugin_path << File.join('#{TasteTester::Config.chef_config_path}', 'ohai_plugins')
       ENDOFSCRIPT
 
+      extra = TasteTester::Hooks.test_remote_client_rb_extra_code(@name)
+      if extra
+        ttconfig += <<~ENDOFSCRIPT
+          # Begin user-hook specified code
+                  #{extra}
+          # End user-hook secified code
+
+        ENDOFSCRIPT
+      end
+
       if TasteTester::Config.bundle
         ttconfig += <<~ENDOFSCRIPT
-          taste_tester_dest = File.join(Dir.tmpdir, 'taste-tester')
+          solo true
+          local_mode true
           puts 'INFO: Downloading bundle from #{url}...'
-          FileUtils.rmtree(taste_tester_dest)
-          FileUtils.mkpath(taste_tester_dest)
-          FileUtils.touch(File.join(taste_tester_dest, 'chefignore'))
+          # TODO this path is somehow set in production, but not at this point
+          # in taste-testing.
+          cookbook_path '/var/chef/cache/cookbooks'
+          FileUtils.mkpath(chef_repo_path)
+          FileUtils.touch(File.join(chef_repo_path, 'chefignore'))
           uri = URI('#{url}/file_store/tt.tgz')
+          created_directories = []
           Net::HTTP.start(
             uri.host,
             uri.port,
@@ -263,7 +277,16 @@ module TasteTester
               # most practical cases.
               stream = Zlib::GzipReader.new(StringIO.new(response.body))
               Gem::Package::TarReader.new(stream).each do |e|
-                dest = File.join(taste_tester_dest, e.full_name)
+                path = e.full_name.split(File::SEPARATOR)
+                # we're downloading into the same place as cached. The tar
+                # typically contains a number of sub-directories of content.
+                # For each of these directories, we should remove the existing
+                # contents so they are not accidentally merged.
+                if path.length > 1 && !created_directories.include?(path[0])
+                  FileUtils.rmtree(File.join(chef_repo_path, path[0]))
+                  created_directories.push(path[0])
+                end
+                dest = File.join(chef_repo_path, e.full_name)
                 FileUtils.mkpath(File.dirname(dest))
                 if e.symlink?
                   File.symlink(e.header.linkname, dest)
@@ -279,8 +302,6 @@ module TasteTester
             end
           end
           puts 'INFO: Download complete'
-          solo true
-          local_mode true
         ENDOFSCRIPT
       else
         ttconfig += <<~ENDOFSCRIPT
@@ -288,27 +309,10 @@ module TasteTester
         ENDOFSCRIPT
       end
 
-      extra = TasteTester::Hooks.test_remote_client_rb_extra_code(@name)
-      if extra
-        ttconfig += <<~ENDOFSCRIPT
-          # Begin user-hook specified code
-                  #{extra}
-          # End user-hook secified code
-
-        ENDOFSCRIPT
-      end
-
       ttconfig += <<~ENDOFSCRIPT
         puts 'INFO: Running on #{@name} in taste-tester by #{@user}'
       ENDOFSCRIPT
 
-      if TasteTester::Config.bundle
-        # This is last in the configuration file because it needs to override
-        # any values in test_remote_client_rb_extra_code
-        ttconfig += <<~ENDOFSCRIPT
-          chef_repo_path taste_tester_dest
-        ENDOFSCRIPT
-      end
       return ttconfig
     end
   end
